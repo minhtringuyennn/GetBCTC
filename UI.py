@@ -79,6 +79,7 @@ class ClientUI(QtWidgets.QDialog):
     # Add custom copy method
     def copySelection(self):
         selection = self.ui.financeStatementTable.selectedIndexes()
+        
         if selection:
             rows = sorted(index.row() for index in selection)
             columns = sorted(index.column() for index in selection)
@@ -90,7 +91,7 @@ class ClientUI(QtWidgets.QDialog):
                 column = index.column() - columns[0]
                 table[row][column] = index.data()
             stream = io.StringIO()
-            csv.writer(stream).writerows(table)
+            csv.writer(stream, delimiter='\t').writerows(table)
             QtWidgets.qApp.clipboard().setText(stream.getvalue())
 
     def QueryBCTC(self):
