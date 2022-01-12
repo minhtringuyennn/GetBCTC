@@ -1,21 +1,23 @@
 # Import Python library
-import csv, io
+import csv, io, math
 from datetime import date, datetime
-from unidecode import unidecode
 from PyQt5 import QtWidgets, QtCore, QtGui, uic
 from PyQt5.QtCore import QAbstractTableModel, Qt
 
 # Import custom modules
+import Utils
 from Handle import FetchData
 
 # Import pyqt GUI
 from GUI.GUI import Ui_Client
 
+# Align cells
 class AlignDelegate(QtWidgets.QStyledItemDelegate):
     def initStyleOption(self, option, index):
         super(AlignDelegate, self).initStyleOption(option, index)
         option.displayAlignment = (QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
 
+# Convert pandas dataframe to pyqt table
 class PandasModel(QAbstractTableModel):
     def __init__(self, data):
         QAbstractTableModel.__init__(self)
@@ -54,18 +56,19 @@ class ClientUI(QtWidgets.QDialog):
 
         self.LoadFunction()
         self.Data = None
-        self.ui.dataTable.installEventFilter(self)
+        self.ui.financeStatementTable.installEventFilter(self)
         self.show()
 
     # Load UI function
     def LoadFunction(self):
-        self.ui.searchButton.clicked.connect(self.QueryType)
+        self.ui.updateButton.clicked.connect(self.QueryBCTC)
+        self.ui.exportButton.clicked.connect(self.ExportBCTC)
         
         now = str(date.today()).split("-")
         self.ui.getDateButton.setDateTime(QtCore.QDateTime(
             QtCore.QDate(int(now[0]), int(now[1]), int(now[2])), QtCore.QTime(0, 0, 0)))
     
-    # add event filter
+    # Add custom event filter
     def eventFilter(self, source, event):
         if (event.type() == QtCore.QEvent.KeyPress and
             event.matches(QtGui.QKeySequence.Copy)):
@@ -73,9 +76,9 @@ class ClientUI(QtWidgets.QDialog):
             return True
         return super(ClientUI, self).eventFilter(source, event)
 
-    # add copy method
+    # Add custom copy method
     def copySelection(self):
-        selection = self.ui.dataTable.selectedIndexes()
+        selection = self.ui.financeStatementTable.selectedIndexes()
         if selection:
             rows = sorted(index.row() for index in selection)
             columns = sorted(index.column() for index in selection)
@@ -90,69 +93,47 @@ class ClientUI(QtWidgets.QDialog):
             csv.writer(stream).writerows(table)
             QtWidgets.qApp.clipboard().setText(stream.getvalue())
 
-    def handleButton(self):
-        filters = (
-            'CSV files (*.csv *.txt)',
-            'Excel Files (*.xls *.xml *.xlsx *.xlsm)',
-            )
-        path, filter = QtWidgets.QFileDialog.getOpenFileName(
-            self, 'Open File', '', ';;'.join(filters))
-        if path:
-            csv = filter.startswith('CSV')
-            if csv:
-                dataframe = pd.read_csv(path)
-            else:
-                dataframe = pd.read_excel(path)
-            self.model.setRowCount(0)
-            dateformat = '%m/%d/%Y'
-            rows, columns = dataframe.shape
-            for row in range(rows):
-                items = []
-                for column in range(columns):
-                    field = dataframe.iat[row, column]
-                    if csv and isinstance(field, str):
-                        try:
-                            field = pd.to_datetime(field, format=dateformat)
-                        except ValueError:
-                            pass
-                    if isinstance(field, pd.Timestamp):
-                        text = field.strftime(dateformat)
-                        data = field.timestamp()
-                    else:
-                        text = str(field)
-                        if isinstance(field, np.number):
-                            data = field.item()
-                        else:
-                            data = text
-                    item = QtGui.QStandardItem(text)
-                    item.setData(data, QtCore.Qt.UserRole)
-                    items.append(item)
-                self.model.appendRow(items)
-    
-    def QueryType(self):
-        searchField     = unidecode(self.ui.searchField.text().upper())
+    def QueryBCTC(self):
+        searchField     = Utils.no_accent_vietnamese(self.ui.searchSymbolField.text().upper())
         typeFinField    = self.ui.typeFinanceField.currentText().lower()
+        typeCurrField   = self.ui.typeCurrencyField.currentText().lower()
         getDate         = self.ui.getDateButton.date().toPyDate()
-        yearCheckBox    = self.ui.yearCheckBox.isChecked()
-        yearQuarter     = self.ui.yearQuarterField.value()
+        yearCheckBox    = self.ui.isYearCheckBox.isChecked()
+        numYearQuarter  = self.ui.numberOfYearQuarterrField.value()
         
-        if len(self.ui.searchField.text()) < 3:
+        if len(self.ui.searchSymbolField.text()) < 3:
             return
         
-        res = FetchData(searchField, typeFinField, getDate, yearCheckBox, yearQuarter)
+        res = FetchData(searchField, typeFinField, typeCurrField, getDate, yearCheckBox, numYearQuarter)
 
         self.Data = res.fetchBCTC()
-        print(self.Data)
+        # print(self.Data)
         
         if self.Data is not None:
-            label = f"Bảng {typeFinField} của {searchField}. Đơn vị: VNĐ."
-            self.ui.financeLabel.setText(label)
-            self.ui.dataTable.setModel(PandasModel(self.Data))
-            self.ui.dataTable.setAlternatingRowColors(True)
-            self.ui.dataTable.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+            label = f"Bảng {typeFinField} của {searchField}. Đơn vị: {typeCurrField}."
+            self.ui.financeStatementLabel.setText(label)
+            self.ui.financeStatementTable.setModel(PandasModel(self.Data))
+            self.ui.financeStatementTable.setAlternatingRowColors(True)
+            self.ui.financeStatementTable.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
             
-            delegate = AlignDelegate(self.ui.dataTable)
-            for i in range(1, yearQuarter + 1):
-                self.ui.dataTable.setItemDelegateForColumn(i, delegate)
+            delegate = AlignDelegate(self.ui.financeStatementTable)
+            for i in range(1, numYearQuarter + 1):
+                self.ui.financeStatementTable.setItemDelegateForColumn(i, delegate)
         else:
             QtWidgets.QMessageBox.critical(None, "Lỗi", "Không tìm thấy dữ liệu!")
+            
+    def ExportBCTC(self):
+        symbol      = Utils.no_accent_vietnamese(self.ui.searchSymbolField.text().upper())
+        typeFin     = Utils.no_accent_vietnamese(self.ui.typeFinanceField.currentText()).replace(" ", "")
+        getDate     = self.ui.getDateButton.date().toPyDate()
+        getDate     = str(getDate)
+        bctcYear    = getDate[:-6]
+        bctcQuarter = math.ceil(int(getDate[5:-3])/3)
+        
+        fileName = f"{symbol}_{typeFin}_{bctcYear}Q{bctcQuarter}.xlsx"
+        
+        self.QueryBCTC()
+        
+        if self.Data is not None:
+            self.Data.to_excel(fileName)
+            QtWidgets.QMessageBox.about(None, "Thông báo", "Đã xuất file thành công tại thư mục chạy .exe hiện thời")

@@ -1,9 +1,12 @@
 import requests, json, math
 import pandas as pd
 
+MILLIONS_VND = 1000000.0
+BILLIONS_VND = 1000000000.0
+
 # Load data from API
 class FetchData():
-    def __init__(self, symbol, type, year, checked, count):
+    def __init__(self, symbol, type, curr, year, checked, count):
         self.symbol = symbol
         
         if type == 'cân đối kế toán':
@@ -14,6 +17,17 @@ class FetchData():
             self.type = 3
         if type == 'lưu chuyển tiền tệ (gián tiếp)':
             self.type = 4
+            
+        if curr == '1,000 vnđ':
+            self.curr = 1
+        if curr == '1,000':
+            self.curr = 2
+        if curr == '1,000,000 vnđ':
+            self.curr = 3
+        if curr == '1,000,000':
+            self.curr = 4
+        if curr == 'không định dạng':
+            self.curr = 0
 
         year = str(year)
         self.year = year[:-6]
@@ -49,9 +63,24 @@ class FetchData():
                 element.pop('Expanded', None)
                 element.pop('Level', None)
                 element.pop('Field', None)
+                
                 for e in element['Values']:
                     period = e['Period']
-                    element.update({period: int(e['Value'] or 0)})
+                    val = float(e['Value'] or 0)
+                    
+                    if self.curr == 1:
+                        val = "{:,.3f} Tr VNĐ".format(float(val/MILLIONS_VND))
+                    if self.curr == 2:
+                        val = "{:,.3f}".format(float(val/MILLIONS_VND))
+                    if self.curr == 3:
+                        val = "{:,.3f} Tỷ VNĐ".format(float(val/BILLIONS_VND))
+                    if self.curr == 4:
+                        val = "{:,.3f}".format(float(val/BILLIONS_VND))
+                    if self.curr == 0:
+                        val = int(val)
+                    
+                    element.update({period: val})
+                
                 element.pop('Values', None)
         except:
             return None
